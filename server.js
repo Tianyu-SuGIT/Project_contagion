@@ -129,8 +129,28 @@ function endRound() {
 function endGame() {
     broadcast({ type: 'system_message', message: '--- Partita Finita ---' });
     // Logica fine partita - da implementare
-    game.isGameRunning = false;
+    setTimeout(resetGame, 5000);
 }
+
+function resetGame() {
+    console.log("Resetting game state.");
+    clearInterval(game.timerInterval);
+    game = {
+        ...game, // Mantieni i giocatori connessi
+        mode: null,
+        secret_word: null,
+        word_choice: null,
+        saboteur: null,
+        round: 0,
+        timer: 60,
+        isGameRunning: false
+    };
+    // Notifica i client che possono iniziare una nuova partita
+    broadcast({ type: 'game_reset' });
+    updatePlayerList();
+}
+
+let nextPlayerId = 1;
 
 wss.on('connection', ws => {
     console.log('Nuovo client connesso');
@@ -140,8 +160,13 @@ wss.on('connection', ws => {
 
         switch (data.type) {
             case 'join':
+                if (game.isGameRunning) {
+                    ws.send(JSON.stringify({ type: 'system_message', message: 'Partita in corso. Attendi la fine per unirti.' }));
+                    return;
+                }
+
                 const newPlayer = {
-                    id: ws._socket.remoteAddress + ':' + ws._socket.remotePort, // ID unico
+                    id: nextPlayerId++,
                     name: data.username,
                     score: 0,
                     role: null,
@@ -165,8 +190,13 @@ wss.on('connection', ws => {
         if (leavingPlayer) {
             console.log(`${leavingPlayer.name} si è disconnesso.`);
             game.players = game.players.filter(p => p.ws !== ws);
-            updatePlayerList();
-            broadcast({ type: 'system_message', message: `${leavingPlayer.name} ha lasciato la lobby.` });
+            if (game.players.length === 0) {
+                console.log("Tutti i giocatori si sono disconnessi. Resetting.");
+                resetGame();
+            } else {
+                updatePlayerList();
+                broadcast({ type: 'system_message', message: `${leavingPlayer.name} ha lasciato la lobby.` });
+            }
         }
     });
 });

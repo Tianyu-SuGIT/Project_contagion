@@ -80,6 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         addMessage('Non conosci la parola segreta. Cerca di non farti scoprire!', 'system');
                     }
                     break;
+                case 'game_reset':
+                    addMessage('La partita è finita. Potete iniziarne una nuova.', 'system');
+                    // Qui in futuro si potrebbe mostrare un pulsante "Inizia Nuova Partita"
+                    break;
                 case 'timer_update':
                     updateTimer(data.time);
                     break;
