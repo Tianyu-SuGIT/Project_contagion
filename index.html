@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guess the Bro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Schermata Home -->
+    <div id="home-screen" class="screen active">
+        <div class="top-right">
+            <button class="icon-button">IT</button>
+            <button class="icon-button">&#9881;</button> <!-- Icona Impostazioni -->
+        </div>
+        <div class="home-container">
+            <h1>Guess the Bro</h1>
+            <p>Inserisci il tuo nome per iniziare</p>
+            <div class="login-box">
+                <input type="text" id="username-input" placeholder="Il tuo username...">
+                <button id="join-game-button">Entra nel Gioco</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schermata di Gioco -->
+    <div id="game-screen" class="screen">
+        <div id="game-header">
+            <h3>Guess the Bro</h3>
+            <div id="timer-display">--:--</div>
+            <div id="player-list"></div>
+        </div>
+        <div id="chat-log"></div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Scrivi qui il tuo voto o la parola...">
+            <button id="submit-action">Invia</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
