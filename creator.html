@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generatore di Misteri - Guess the Bro</title>
+    <link rel="stylesheet" href="style.css"> 
+    <style>
+        /* Stili aggiuntivi per questa pagina */
+        body { overflow-y: auto; }
+        .creator-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: var(--secondary-bg);
+            border-radius: 8px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--primary-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        #save-button {
+            padding: 12px 25px;
+            font-size: 1.1rem;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #status-message {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="creator-container">
+        <h1>Generatore di Misteri</h1>
+        <p>Usa questo form per aggiungere nuove parole o misteri al gioco.</p>
+        
+        <div class="form-group">
+            <label for="title">Titolo del Mistero / Parola</label>
+            <input type="text" id="title" placeholder="Es: La scomparsa di Amelia Earhart">
+        </div>
+
+        <fieldset style="border: 1px solid var(--border-color); padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <legend>Indizi Corretti</legend>
+            <div class="form-group">
+                <label for="good-clues-r1">Round 1 (5 parole, separate da virgola)</label>
+                <input type="text" id="good-clues-r1" placeholder="Es: Aviazione, Oceano, Volo, 1937, Tracce">
+            </div>
+            <div class="form-group">
+                <label for="good-clues-r2">Round 2 (frase breve)</label>
+                <input type="text" id="good-clues-r2" placeholder="Es: Un famoso tentativo di circumnavigare il globo.">
+            </div>
+            <div class="form-group">
+                <label for="good-clues-r3">Round 3 (frase breve)</label>
+                <input type="text" id="good-clues-r3" placeholder="Es: Il suo aereo non fu mai ritrovato.">
+            </div>
+        </fieldset>
+
+        <fieldset style="border: 1px solid var(--border-color); padding: 15px; border-radius: 5px;">
+            <legend>Indizi Fuorvianti (per il Sabotatore Informato)</legend>
+            <div class="form-group">
+                <label for="bad-clues-r1">Round 1 (5 parole, separate da virgola)</label>
+                <input type="text" id="bad-clues-r1" placeholder="Es: Nave, Deserto, Treno, Montagne, Bussola">
+            </div>
+            <div class="form-group">
+                <label for="bad-clues-r2">Round 2 (frase breve)</label>
+                <input type="text" id="bad-clues-r2" placeholder="Es: Un viaggio alla scoperta di un tesoro sommerso.">
+            </div>
+            <div class="form-group">
+                <label for="bad-clues-r3">Round 3 (frase breve)</label>
+                <input type="text" id="bad-clues-r3" placeholder="Es: Si concluse con il ritrovamento di una mappa antica.">
+            </div>
+        </fieldset>
+
+        <button id="save-button">Salva Mistero nel Gioco</button>
+        <p id="status-message"></p>
+    </div>
+
+    <script src="creator.js"></script>
+</body>
+</html>

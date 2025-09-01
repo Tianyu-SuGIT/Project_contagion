@@ -7,8 +7,42 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// Middleware per parsare il body delle richieste JSON
+app.use(express.json());
+
 // Serve i file statici (html, css, js)
 app.use(express.static('.'));
+
+// Endpoint per aggiungere un nuovo mistero
+app.post('/add-mystery', (req, res) => {
+    try {
+        const newMystery = req.body;
+
+        // Validazione base
+        if (!newMystery || !newMystery.word) {
+            return res.status(400).json({ message: 'Dati invalidi.' });
+        }
+
+        // Leggi il file esistente, aggiungi il nuovo mistero e salva
+        const filePath = 'words.json';
+        const fileData = fs.readFileSync(filePath);
+        const jsonData = JSON.parse(fileData);
+        
+        jsonData.words.push(newMystery);
+        
+        fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
+
+        // Aggiorna i dati in memoria nel server
+        wordsData.push(newMystery);
+
+        console.log(`Nuovo mistero aggiunto: ${newMystery.word}`);
+        res.status(200).json({ message: 'Mistero aggiunto con successo!' });
+
+    } catch (error) {
+        console.error("Errore nell'aggiungere il mistero:", error);
+        res.status(500).json({ message: 'Errore interno del server.' });
+    }
+});
 
 let wordsData = [];
 try {
