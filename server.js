@@ -1,242 +1,474 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Middleware per parsare il body delle richieste JSON
-app.use(express.json());
+app.use(express.static(path.join(__dirname, '/')));
 
-// Serve i file statici (html, css, js)
-app.use(express.static('.'));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Endpoint per aggiungere un nuovo mistero
-app.post('/add-mystery', (req, res) => {
-    try {
-        const newMystery = req.body;
-
-        // Validazione base
-        if (!newMystery || !newMystery.word) {
-            return res.status(400).json({ message: 'Dati invalidi.' });
-        }
-
-        // Leggi il file esistente, aggiungi il nuovo mistero e salva
-        const filePath = 'words.json';
-        const fileData = fs.readFileSync(filePath);
-        const jsonData = JSON.parse(fileData);
-        
-        jsonData.words.push(newMystery);
-        
-        fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
-
-        // Aggiorna i dati in memoria nel server
-        wordsData.push(newMystery);
-
-        console.log(`Nuovo mistero aggiunto: ${newMystery.word}`);
-        res.status(200).json({ message: 'Mistero aggiunto con successo!' });
-
-    } catch (error) {
-        console.error("Errore nell'aggiungere il mistero:", error);
-        res.status(500).json({ message: 'Errore interno del server.' });
-    }
-});
-
-let wordsData = [];
-try {
-    const rawData = fs.readFileSync('words.json');
-    wordsData = JSON.parse(rawData).words;
-} catch (error) {
-    console.error('Errore nel caricamento di words.json:', error);
-}
-
-// --- Gestione Gioco ---
-let game = {
-    players: [],
-    mode: null,
-    secret_word: null,
-    word_choice: null,
-    saboteur: null,
+// --- Game State ---
+let players = []; // { ws, id, name, role, isAlive, position, isImmune }
+let gameState = {
+    phase: 'LOBBY', // LOBBY, NIGHT, DAY, END
     round: 0,
-    timer: 60,
-    timerInterval: null,
-    isGameRunning: false
+    cureProgress: 0,
+    terroristShotUsed: false,
+    nightActions: [], // { actorId, action, targetId }
+    votes: {}, // { voterId: targetId }
+    gameLog: [],
+    winData: null,
+    dayTimer: null
 };
 
-function broadcast(data) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
-        }
-    });
-}
+const ROLES = {
+    RESEARCHER: 'Ricercatore',
+    JOURNALIST: 'Giornalista',
+    POLICEMAN: 'Poliziotto',
+    CITIZEN: 'Cittadino Comune',
+    TERRORIST: 'Terrorista',
+    FANATIC: 'Fanatico'
+};
 
-function updatePlayerList() {
-    const players = game.players.map(p => ({ name: p.name, score: p.score }));
-    broadcast({ type: 'player_update', players });
-}
-
-function startGame(mode) {
-    if (game.players.length < 3) {
-        broadcast({ type: 'system_message', message: 'Servono almeno 3 giocatori per iniziare.' });
-        return;
-    }
-    game.isGameRunning = true;
-    game.mode = mode;
-    game.round = 1;
+// --- WebSocket Handling ---
+wss.on('connection', (ws) => {
+    const playerId = `player_${Date.now()}_${Math.random()}`;
     
-    // Scegli parola e sabotatore
-    game.word_choice = wordsData[Math.floor(Math.random() * wordsData.length)];
-    game.secret_word = game.word_choice.word;
-    game.saboteur = game.players[Math.floor(Math.random() * game.players.length)];
-
-    game.players.forEach(p => {
-        p.role = (p.id === game.saboteur.id) ? 'Sabotatore' : 'Cittadino';
-        const message = {
-            type: 'game_start',
-            role: p.role,
-            mode: game.mode
-        };
-        // Invia la parola segreta a chi deve conoscerla
-        if (game.mode === 'hidden_saboteur' && p.role !== 'Sabotatore') {
-            message.secret_word = game.secret_word;
+    // Send initial game state to the newly connected client
+    const minimalPlayers = players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isAlive: p.isAlive,
+        position: p.position
+    }));
+    ws.send(JSON.stringify({
+        type: 'GAME_STATE_UPDATE',
+        payload: {
+            ...gameState,
+            players: minimalPlayers,
+            nightActions: undefined,
+            you: null // No personal info yet
         }
-        if (game.mode === 'informed_saboteur' && p.role === 'Sabotatore') {
-            message.secret_word = game.secret_word;
-        }
-        p.ws.send(JSON.stringify(message));
-    });
-
-    console.log(`Partita iniziata. Sabotatore: ${game.saboteur.name}, Parola: ${game.secret_word}`);
-    startRound();
-}
-
-function startRound() {
-    broadcast({ type: 'system_message', message: `--- Inizia il Round ${game.round} ---` });
+    }));
     
-    // Invia indizi
-    setTimeout(() => {
-        let clues;
-        if (game.mode === 'hidden_saboteur') {
-            clues = game.word_choice.clues[`round${game.round}`];
-        } else { // Sabotatore Informato
-            if(game.round === 1) {
-                const good = [...game.word_choice.clues.round1].sort(() => 0.5 - Math.random()).slice(0, 4);
-                const bad = game.word_choice.bad_clues.round1[Math.floor(Math.random() * 5)];
-                clues = [...good, bad].sort(() => 0.5 - Math.random());
-            } else {
-                // Per i round 2 e 3, il sabotatore sceglie se mandare l'indizio buono o cattivo
-                // Semplifichiamo per ora e mandiamo quello buono
-                clues = game.word_choice.clues[`round${game.round}`];
-            }
-        }
-        broadcast({ type: 'clues', clues });
-    }, 2000);
-
-    // Gestione Timer
-    game.timer = 60;
-    clearInterval(game.timerInterval);
-    game.timerInterval = setInterval(() => {
-        broadcast({ type: 'timer_update', time: game.timer });
-        game.timer--;
-        if (game.timer < 0) {
-            clearInterval(game.timerInterval);
-            endRound();
-        }
-    }, 1000);
-}
-
-function endRound() {
-    broadcast({ type: 'system_message', message: `--- Round ${game.round} Terminato ---` });
-    // Logica di fine round (voto, etc.) - da implementare
-    game.round++;
-    if (game.round > 3) {
-        endGame();
-    } else {
-        // Per ora, passiamo direttamente al prossimo round
-        setTimeout(startRound, 3000);
-    }
-}
-
-function endGame() {
-    broadcast({ type: 'system_message', message: '--- Partita Finita ---' });
-    // Logica fine partita - da implementare
-    setTimeout(resetGame, 5000);
-}
-
-function resetGame() {
-    console.log("Resetting game state.");
-    clearInterval(game.timerInterval);
-    game = {
-        ...game, // Mantieni i giocatori connessi
-        mode: null,
-        secret_word: null,
-        word_choice: null,
-        saboteur: null,
-        round: 0,
-        timer: 60,
-        isGameRunning: false
-    };
-    // Notifica i client che possono iniziare una nuova partita
-    broadcast({ type: 'game_reset' });
-    updatePlayerList();
-}
-
-let nextPlayerId = 1;
-
-wss.on('connection', ws => {
-    console.log('Nuovo client connesso');
-
-    ws.on('message', message => {
+    ws.on('message', (message) => {
         const data = JSON.parse(message);
-
-        switch (data.type) {
-            case 'join':
-                if (game.isGameRunning) {
-                    ws.send(JSON.stringify({ type: 'system_message', message: 'Partita in corso. Attendi la fine per unirti.' }));
-                    return;
-                }
-
-                const newPlayer = {
-                    id: nextPlayerId++,
-                    name: data.username,
-                    score: 0,
-                    role: null,
-                    ws: ws
-                };
-                game.players.push(newPlayer);
-                console.log(`${data.username} si è unito.`);
-                updatePlayerList();
-                broadcast({ type: 'system_message', message: `${data.username} si è unito alla lobby.` });
-                
-                // Per test, avviamo la partita automaticamente con 4 giocatori
-                if (game.players.length === 4 && !game.isGameRunning) {
-                    setTimeout(() => startGame('informed_saboteur'), 2000); // Avvia una modalità di default
-                }
-                break;
-        }
+        handleClientMessage(ws, playerId, data);
     });
 
     ws.on('close', () => {
-        const leavingPlayer = game.players.find(p => p.ws === ws);
-        if (leavingPlayer) {
-            console.log(`${leavingPlayer.name} si è disconnesso.`);
-            game.players = game.players.filter(p => p.ws !== ws);
-            if (game.players.length === 0) {
-                console.log("Tutti i giocatori si sono disconnessi. Resetting.");
-                resetGame();
-            } else {
-                updatePlayerList();
-                broadcast({ type: 'system_message', message: `${leavingPlayer.name} ha lasciato la lobby.` });
+        const player = players.find(p => p.id === playerId);
+        if (player) {
+            console.log(`${player.name} disconnected.`);
+            players = players.filter(p => p.id !== playerId);
+            if (gameState.phase !== 'LOBBY') {
+                // In-game disconnect handling can be complex, for now we just remove them
+                // A better implementation might kill them or end the game
+                player.isAlive = false;
+                checkWinConditions();
             }
+            broadcastGameState();
         }
     });
 });
 
-const PORT = process.env.PORT || 3000;
+function handleClientMessage(ws, playerId, data) {
+    const { type, payload } = data;
 
-server.listen(PORT, () => {
-    console.log(`Server in ascolto sulla porta ${PORT}`);
-});
+    switch (type) {
+        case 'JOIN_GAME':
+            if (gameState.phase === 'LOBBY') {
+                const newPlayer = {
+                    ws,
+                    id: playerId,
+                    name: payload.name,
+                    role: null,
+                    isAlive: true,
+                    position: 0,
+                    isImmune: false
+                };
+                players.push(newPlayer);
+                console.log(`${newPlayer.name} joined the lobby.`);
+                broadcastGameState();
+            }
+            break;
+        
+        case 'START_GAME':
+            if (gameState.phase === 'LOBBY' && players.length >= 8) {
+                startGame();
+            }
+            break;
+
+        case 'NIGHT_ACTION':
+            if (gameState.phase === 'NIGHT') {
+                const player = players.find(p => p.id === playerId);
+                if (player && player.isAlive) {
+                    gameState.nightActions.push({ actorId: playerId, ...payload });
+                    // Optional: send confirmation back to player
+                    ws.send(JSON.stringify({ type: 'ACTION_CONFIRMED' }));
+                    checkNightActionsComplete();
+                }
+            }
+            break;
+        
+        case 'TERRORIST_CHAT':
+             const sender = players.find(p => p.id === playerId);
+             if (sender && sender.role === ROLES.TERRORIST) {
+                const terroristMessage = {
+                    type: 'TERRORIST_CHAT_MESSAGE',
+                    payload: { sender: sender.name, message: payload.message }
+                };
+                players.forEach(p => {
+                    if (p.role === ROLES.TERRORIST) {
+                        p.ws.send(JSON.stringify(terroristMessage));
+                    }
+                });
+             }
+             break;
+
+        case 'VOTE':
+            if (gameState.phase === 'DAY') {
+                const voter = players.find(p => p.id === playerId);
+                if (voter && voter.isAlive) {
+                    gameState.votes[playerId] = payload.targetId;
+                    broadcastGameState(); // Broadcast to show votes in real-time
+
+                    // Check if all alive players have voted
+                    const alivePlayers = players.filter(p => p.isAlive);
+                    if (Object.keys(gameState.votes).length === alivePlayers.length) {
+                        resolveDay(); // End day early if everyone voted
+                    }
+                }
+            }
+            break;
+    }
+}
+
+// --- Game Logic ---
+function startGame() {
+    console.log('Starting game...');
+    gameState.phase = 'NIGHT';
+    gameState.round = 1;
+    assignRoles();
+    positionPlayers();
+    broadcastGameState();
+    startNight();
+}
+
+function assignRoles() {
+    const numPlayers = players.length;
+    let rolesToAssign = [];
+
+    // Define role counts based on player number (simplified logic)
+    rolesToAssign.push(ROLES.POLICEMAN, ROLES.JOURNALIST, ROLES.FANATIC);
+    rolesToAssign.push(ROLES.TERRORIST, ROLES.TERRORIST);
+    rolesToAssign.push(ROLES.RESEARCHER, ROLES.RESEARCHER);
+
+    const remainingPlayers = numPlayers - rolesToAssign.length;
+    for (let i = 0; i < remainingPlayers; i++) {
+        rolesToAssign.push(ROLES.CITIZEN);
+    }
+
+    // Shuffle roles and assign
+    rolesToAssign.sort(() => Math.random() - 0.5);
+    players.forEach((player, i) => {
+        player.role = rolesToAssign[i];
+    });
+
+    // Assign Immune Citizen secretly from the Citizen faction
+    const citizenFactionRoles = [ROLES.CITIZEN, ROLES.RESEARCHER, ROLES.JOURNALIST, ROLES.POLICEMAN];
+    const potentialImmune = players.filter(p => citizenFactionRoles.includes(p.role));
+    if (potentialImmune.length > 0) {
+        const immunePlayer = potentialImmune[Math.floor(Math.random() * potentialImmune.length)];
+        immunePlayer.isImmune = true;
+        console.log(`Immune citizen is: ${immunePlayer.name}`);
+    }
+     console.log('Roles assigned:', players.map(p => `${p.name}: ${p.role}`).join(', '));
+}
+
+function positionPlayers() {
+    players.forEach((player, i) => {
+        player.position = i + 1;
+    });
+}
+
+function startNight() {
+    console.log(`--- Round ${gameState.round}: Night Phase ---`);
+    gameState.phase = 'NIGHT';
+    gameState.nightActions = [];
+    broadcastGameState();
+    // Set a timer for the night phase
+    setTimeout(resolveNight, 120000); // 120 second night
+}
+
+function checkNightActionsComplete() {
+    const alivePlayersWithActions = players.filter(p => 
+        p.isAlive && p.role !== ROLES.CITIZEN && p.role !== ROLES.FANATIC
+    ).length;
+    
+    if (gameState.nightActions.length >= alivePlayersWithActions) {
+        // Everyone has acted, resolve night early
+        // Clear the existing timeout and resolve immediately
+        // Note: This requires managing the timeout object, simplified for now.
+    }
+}
+
+function resolveNight() {
+    if (gameState.phase !== 'NIGHT') return; // Avoid double resolution
+    console.log('Resolving night actions...');
+    
+    const log = [];
+    const eliminations = new Map(); // key: playerId, value: reason ('SHOT', 'VIRUS')
+
+    const getAction = (actionType) => gameState.nightActions.find(a => a.action === actionType);
+
+    // 1. Police Shot
+    const policeShot = getAction('SHOOT_POLICE');
+    if (policeShot) {
+        const target = players.find(p => p.id === policeShot.targetId);
+        if (target && target.isAlive) {
+            eliminations.set(target.id, 'SHOT');
+            log.push(`${target.name} was found dead.`);
+        }
+    }
+
+    // 2. Terrorist Shot (one-time)
+    const terroristShot = getAction('SHOOT_TERRORIST');
+    if (terroristShot && !gameState.terroristShotUsed) {
+        const target = players.find(p => p.id === terroristShot.targetId);
+        if (target && target.isAlive && !eliminations.has(target.id)) {
+            eliminations.set(target.id, 'SHOT');
+            log.push(`${target.name} was found dead.`);
+            gameState.terroristShotUsed = true;
+        }
+    }
+
+    // 3. Infection
+    const infection = getAction('INFECT');
+    if (infection) {
+        const target = players.find(p => p.id === infection.targetId);
+        if (target && target.isAlive && !eliminations.has(target.id)) {
+            if (target.isImmune) {
+                log.push(`${target.name} was targeted by the virus but survived (Immune).`);
+            } else {
+                eliminations.set(target.id, 'VIRUS');
+                log.push(`${target.name} has disappeared (Patient Zero).`);
+                
+                // Virus Propagation
+                const numPlayers = players.length;
+                const pos = target.position;
+                const leftPos = (pos === 1) ? numPlayers : pos - 1;
+                const rightPos = (pos === numPlayers) ? 1 : pos + 1;
+
+                const leftPlayer = players.find(p => p.position === leftPos);
+                const rightPlayer = players.find(p => p.position === rightPos);
+
+                if (leftPlayer && leftPlayer.isAlive && !eliminations.has(leftPlayer.id)) {
+                    if (leftPlayer.isImmune) {
+                        log.push(`The virus spread to ${leftPlayer.name}, but they survived (Immune).`);
+                    } else {
+                        eliminations.set(leftPlayer.id, 'VIRUS');
+                        log.push(`The virus spread to ${leftPlayer.name}.`);
+                    }
+                }
+                if (rightPlayer && rightPlayer.isAlive && !eliminations.has(rightPlayer.id)) {
+                     if (rightPlayer.isImmune) {
+                        log.push(`The virus spread to ${rightPlayer.name}, but they survived (Immune).`);
+                    } else {
+                        eliminations.set(rightPlayer.id, 'VIRUS');
+                        log.push(`The virus spread to ${rightPlayer.name}.`);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Apply eliminations
+    eliminations.forEach((reason, playerId) => {
+        const player = players.find(p => p.id === playerId);
+        if (player) player.isAlive = false;
+    });
+
+    // Check for Fanatic win before proceeding
+    if (checkWinConditions()) return;
+
+    // 4. Investigations & Analysis (feedback sent privately)
+    const journalistAction = getAction('INVESTIGATE');
+    if (journalistAction) {
+        const actor = players.find(p => p.id === journalistAction.actorId);
+        const target = players.find(p => p.id === journalistAction.targetId);
+        if (actor && target) {
+            actor.ws.send(JSON.stringify({ type: 'PRIVATE_FEEDBACK', payload: `Your investigation reveals ${target.name} is a ${target.role}.` }));
+        }
+    }
+
+    const researcherActions = gameState.nightActions.filter(a => a.action === 'ANALYZE');
+    researcherActions.forEach(action => {
+        const actor = players.find(p => p.id === action.actorId);
+        const target = players.find(p => p.id === action.targetId);
+        if (actor && target) {
+            if (target.isImmune) {
+                gameState.cureProgress++;
+                actor.ws.send(JSON.stringify({ type: 'PRIVATE_FEEDBACK', payload: `Your analysis of ${target.name} was a success! Cure progress has advanced.` }));
+            } else {
+                actor.ws.send(JSON.stringify({ type: 'PRIVATE_FEEDBACK', payload: `Your analysis of ${target.name} yielded no results.` }));
+            }
+        }
+    });
+
+    gameState.gameLog.push(...log);
+    
+    if (checkWinConditions()) return;
+
+    startDay();
+}
+
+function startDay() {
+    console.log('--- Day Phase ---');
+    gameState.phase = 'DAY';
+    gameState.votes = {}; // Reset votes for the new day
+    broadcastGameState();
+    
+    // Clear any previous timer and set a new one
+    if (gameState.dayTimer) {
+        clearTimeout(gameState.dayTimer);
+    }
+    gameState.dayTimer = setTimeout(resolveDay, 120000); // 120 second day
+}
+
+function resolveDay() {
+    if (gameState.phase !== 'DAY') return;
+
+    console.log('Resolving day vote...');
+    if (gameState.dayTimer) {
+        clearTimeout(gameState.dayTimer);
+        gameState.dayTimer = null;
+    }
+
+    const voteCounts = {};
+    const alivePlayerIds = players.filter(p => p.isAlive).map(p => p.id);
+
+    // Initialize vote counts for all alive players to 0
+    alivePlayerIds.forEach(id => voteCounts[id] = 0);
+
+    // Tally votes from the gameState
+    for (const voterId in gameState.votes) {
+        const targetId = gameState.votes[voterId];
+        if (voteCounts.hasOwnProperty(targetId)) {
+            voteCounts[targetId]++;
+        }
+    }
+
+    let maxVotes = 0;
+    let playerToEliminateId = null;
+    let tie = false;
+
+    for (const playerId in voteCounts) {
+        const votes = voteCounts[playerId];
+        if (votes > maxVotes) {
+            maxVotes = votes;
+            playerToEliminateId = playerId;
+            tie = false;
+        } else if (votes === maxVotes && maxVotes > 0) {
+            tie = true;
+        }
+    }
+
+    const log = [];
+    if (tie || maxVotes === 0) {
+        log.push('The vote resulted in a tie. No one was eliminated.');
+    } else if (playerToEliminateId) {
+        const eliminatedPlayer = players.find(p => p.id === playerToEliminateId);
+        if (eliminatedPlayer) {
+            eliminatedPlayer.isAlive = false;
+            log.push(`${eliminatedPlayer.name} was eliminated by popular vote.`);
+        }
+    }
+
+    gameState.gameLog.push(...log);
+
+    if (checkWinConditions()) return;
+
+    gameState.round++;
+    startNight();
+}
+
+function checkWinConditions() {
+    const alivePlayers = players.filter(p => p.isAlive);
+    const aliveCitizens = alivePlayers.filter(p => [ROLES.CITIZEN, ROLES.RESEARCHER, ROLES.JOURNALIST, ROLES.POLICEMAN].includes(p.role));
+    const aliveTerrorists = alivePlayers.filter(p => p.role === ROLES.TERRORIST);
+
+    let winner = null;
+    let reason = '';
+
+    // Fanatic Win
+    const fanatic = players.find(p => p.role === ROLES.FANATIC);
+    if (fanatic && !fanatic.isAlive) {
+        winner = 'Fanatico';
+        reason = 'The Fanatic has achieved their goal of being eliminated.';
+    }
+    // Citizen Win
+    else if (gameState.cureProgress >= 3) {
+        winner = 'Cittadini';
+        reason = 'The cure has been developed!';
+    } else if (aliveTerrorists.length === 0) {
+        winner = 'Cittadini';
+        reason = 'All Terrorists have been eliminated.';
+    }
+    // Terrorist Win
+    else if (aliveTerrorists.length >= aliveCitizens.length) {
+        winner = 'Terroristi';
+        reason = 'The Terrorists have achieved numerical superiority.';
+    }
+
+    if (winner) {
+        console.log(`Game Over. Winner: ${winner}`);
+        gameState.phase = 'END';
+        const fullRoles = players.map(p => ({ id: p.id, name: p.name, role: p.role }));
+        gameState.winData = { winner, reason, fullRoles };
+        broadcastGameState();
+        return true;
+    }
+    return false;
+}
+
+
+// --- Broadcasting ---
+function broadcastGameState() {
+    const minimalPlayers = players.map(p => ({
+        id: p.id,
+        name: p.name,
+        isAlive: p.isAlive,
+        position: p.position
+    }));
+
+    players.forEach(player => {
+        const personalState = {
+            type: 'GAME_STATE_UPDATE',
+            payload: {
+                ...gameState,
+                players: minimalPlayers,
+                // Don't send night actions or full player objects
+                nightActions: undefined, 
+                // Personal info
+                you: {
+                    id: player.id,
+                    role: player.role,
+                    isAlive: player.isAlive,
+                    isImmune: player.isImmune,
+                    position: player.position,
+                    // Reveal terrorist partner
+                    partner: player.role === ROLES.TERRORIST 
+                        ? players.find(p => p.role === ROLES.TERRORIST && p.id !== player.id)?.name 
+                        : null
+                }
+            }
+        };
+        player.ws.send(JSON.stringify(personalState));
+    });
+}

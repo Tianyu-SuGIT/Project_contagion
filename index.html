@@ -1,43 +1,90 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guess the Bro</title>
-    <link rel="stylesheet" href="style.css">
+    <title>Project Contagion</title>
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
-    <!-- Schermata Home -->
-    <div id="home-screen" class="screen active">
-        <div class="top-right">
-            <button class="icon-button">IT</button>
-            <button class="icon-button">&#9881;</button> <!-- Icona Impostazioni -->
+    <div id="game-container">
+
+        <!-- Lobby View -->
+        <div id="lobby-view" class="view">
+            <h1>Project Contagion</h1>
+            <p>Enter your name to join the lobby.</p>
+            <input type="text" id="name-input" placeholder="Your Name">
+            <button id="join-button">Join Game</button>
+            <div id="lobby-players">
+                <h2>Players in Lobby:</h2>
+                <ul id="player-list"></ul>
+            </div>
+            <button id="start-button">Start Game (Min 8 Players)</button>
         </div>
-        <div class="home-container">
-            <h1>Guess the Bro</h1>
-            <p>Inserisci il tuo nome per iniziare</p>
-            <div class="login-box">
-                <input type="text" id="username-input" placeholder="Il tuo username...">
-                <button id="join-game-button">Entra nel Gioco</button>
+
+        <!-- Game View -->
+        <div id="game-view" class="view" style="display: none;">
+            <div id="left-panel">
+                <div id="role-info">
+                    <h2>Your Role</h2>
+                    <p id="role-name">-</p>
+                    <p id="role-description">-</p>
+                    <p id="terrorist-partner" style="display: none;"></p>
+                </div>
+                <div id="cure-progress">
+                    <h3>Cure Progress</h3>
+                    <div class="progress-bar-container">
+                        <div id="progress-bar" class="progress-bar"></div>
+                    </div>
+                    <p id="cure-status">0 / 3</p>
+                </div>
+                 <div id="terrorist-chat-container" style="display: none;">
+                    <h3>Terrorist Chat</h3>
+                    <div id="terrorist-messages"></div>
+                    <input type="text" id="terrorist-chat-input" placeholder="Secret message...">
+                    <button id="terrorist-chat-send">Send</button>
+                </div>
+            </div>
+
+            <div id="main-panel">
+                <div id="game-header">
+                    <h2 id="phase-display">Phase: LOBBY</h2>
+                    <h3 id="timer-display"></h3>
+                </div>
+                <div id="player-circle-container">
+                    <!-- Players will be dynamically inserted here -->
+                </div>
+                <div id="action-overlay" style="display: none;">
+                    <h3 id="action-title"></h3>
+                    <p id="action-prompt"></p>
+                    <button id="confirm-action-button" disabled>Confirm Action</button>
+                </div>
+            </div>
+
+            <div id="right-panel">
+                <div id="game-log">
+                    <h3>Event Log</h3>
+                    <ul id="log-list"></ul>
+                </div>
+                 <div id="private-feedback">
+                    <h3>Private Intel</h3>
+                    <p id="feedback-message"></p>
+                </div>
             </div>
         </div>
+
+        <!-- End Game View -->
+        <div id="end-view" class="view" style="display: none;">
+            <h1 id="win-title"></h1>
+            <p id="win-reason"></p>
+            <h2>Final Roles</h2>
+            <ul id="final-roles-list"></ul>
+            <button id="play-again-button">Play Again</button>
+        </div>
+
     </div>
 
-    <!-- Schermata di Gioco -->
-    <div id="game-screen" class="screen">
-        <div id="game-header">
-            <h3>Guess the Bro</h3>
-            <div id="timer-display">--:--</div>
-            <div id="player-list"></div>
-        </div>
-        <div id="chat-log"></div>
-        <div id="input-area">
-            <input type="text" id="user-input" placeholder="Scrivi qui il tuo voto o la parola...">
-            <button id="submit-action">Invia</button>
-        </div>
-    </div>
-
-    <script src="app.js"></script>
+    <script src="/app.js"></script>
 </body>
 </html>
