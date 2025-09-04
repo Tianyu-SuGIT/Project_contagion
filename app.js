@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const ws = new WebSocket(`ws://${window.location.host}`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}`);
 
     // Views
     const lobbyView = document.getElementById('lobby-view');
@@ -85,6 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            joinButton.click();
+        }
+    });
+
     startButton.addEventListener('click', () => {
         sendMessage('START_GAME', {});
     });
@@ -105,6 +112,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    terroristChatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            terroristChatSend.click();
+        }
+    });
+
     playAgainButton.addEventListener('click', () => {
         // Simple refresh to go back to lobby
         window.location.reload();
@@ -118,7 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         endView.style.display = state.phase === 'END' ? 'block' : 'none';
 
         if (state.phase === 'LOBBY') {
-            updateLobby(state.players);
+            updateLobby(state);
         } else if (state.phase === 'NIGHT' || state.phase === 'DAY') {
             localPlayer = { ...localPlayer, ...state.you };
             updateGameView(state);
@@ -127,7 +140,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function updateLobby(players) {
+    function updateLobby(state) {
+        const { players } = state;
         playerList.innerHTML = '';
         players.forEach(p => {
             const li = document.createElement('li');
