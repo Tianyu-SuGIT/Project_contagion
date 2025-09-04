@@ -2,6 +2,8 @@
 
 `Project Contagion` è un gioco di deduzione sociale online, simile a classici come *Mafia* o *Lupus in Tabula*.
 
+##try on: https://guessthebro.onrender.com
+
 ## Scopo del Gioco
 
 Ci sono due fazioni principali che si scontrano: i **Cittadini** e i **Terroristi**.
